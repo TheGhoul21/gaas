@@ -1,0 +1,10 @@
+id:
+  type: ID
+text:
+  type: String
+pros:
+  type: [TopicFactor]
+cons:
+  type: [TopicFactor]
+user:
+  type: User

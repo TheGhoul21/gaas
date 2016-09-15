@@ -1,0 +1,4 @@
+id:
+  type: ID
+username:
+  type: String

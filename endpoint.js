@@ -10,10 +10,44 @@ import {
 } from 'graphql/type';
 
 var YAML = require('yamljs');
+
+import redis from 'redis';
+import bluebird from 'bluebird';
+
+let redisClient = redis.createClient();
+
+let redisGet = bluebird.promisify(redisClient.get, {context: redisClient});
+let redisGetHash = bluebird.promisify(redisClient.hgetall, {context: redisClient});
+// let redisSetHash = bluebird.promisify(redisClient.hsetall, {context: redisClient});
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
 
 const app = express();
+
+var requiredEnum = {
+	YES: "YES",
+	NO: "NO",
+	OPTIONAL: "OPTIONAL"
+}
+
+
+var testObject = {
+			id: 1,
+			text: "topic" + ": " + "AAAA",
+// 			pros: [
+// 				{id:1, text:"a"},
+// 				{id:2, text:"b"},
+// 			]
+		};
+
+redisClient.hmset('hello', testObject, function() {
+	console.log(arguments);
+});
+// var requiredType = new GraphQLEnumType ({
+// 	name: "required",
+// 	values: requiredEnum
+// });
+
 
 var TopicTypeFields = {
 	"id": {
@@ -21,20 +55,25 @@ var TopicTypeFields = {
 		"indexable": true,
 	},
 	"text": {
-		"type": "String"
+		"type": "String",
+		"required": "YES",
 	},
 	"pros": {
 		"type": [
 			"TopicFactor"
-		]
+		],
+		"required": "NO"
 	},
 	"cons": {
 		"type": [
 			"TopicFactor"
-		]
+		],
+		"required": "NO"
 	},
 	"user": {
-		"type": "User"
+		"type": "User",
+		"required": "NO",
+		"defaultUser": true
 	}
 };
 
@@ -44,7 +83,8 @@ var TopicFactorTypeFields = {
 		"indexable": true,
 	},
 	"text": {
-		"type": "String"
+		"type": "String",
+		"required": "YES"
 	}
 };
 var UserTypeFields = {
@@ -109,8 +149,32 @@ for (let [key, fields] of entries(types)) {
 			return tempFields;
 		}
 	})(fields);
+	
+	var inputFieldsThunk = ((fields) => {
+		return function() {
 
-	var argsThunk = ((fields) => {
+			let tempFields = {};
+			let tempArgs = {};
+			let _type;
+			for (let [fieldName, config] of entries(fields)) {
+				if ((config.required == requiredEnum.YES || config.required == requiredEnum.OPTIONAL) && 
+						(defaultTypes[config.type] || types[config.type])) {
+					if (defaultTypes[config.type]) {
+						tempFields[fieldName] = {
+							type: defaultTypes[config.type]
+						};
+					} else {
+						tempFields[fieldName] = {
+							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
+						};
+					}
+				}
+			}
+			return tempFields;
+		}
+	})(fields);
+
+	let argsThunk = ((fields) => {
 
 		let tempArgs = {};
 		let _type;
@@ -132,20 +196,21 @@ for (let [key, fields] of entries(types)) {
 
 	})(fields);
 
-	console.log(argsThunk);
 
 	var resolveThunk = ((key) => (root, args) => {
+		var value = Promise.resolve(redisGetHash("hello"));
 		
+		console.log(value);
 		
-		
-		return {
-			id: args.id,
-			text: key + ": " + "AAAA",
-			pros: [
-				{id:1, text:"a"},
-				{id:2, text:"b"},
-			]
-		}
+		return value;
+// 		return {
+// 			id: args.id,
+// 			text: key + ": " + "AAAA",
+// 			pros: [
+// 				{id:1, text:"a"},
+// 				{id:2, text:"b"},
+// 			]
+// 		}
 	})(key);
 
 

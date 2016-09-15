@@ -10,11 +10,13 @@
   "license": "ISC",
   "dependencies": {
     "assert": "^1.4.1",
+    "bluebird": "^3.4.6",
     "express": "^4.14.0",
     "express-graphql": "^0.5.4",
     "graphql": "^0.7.0",
     "graphql-relay": "^0.4.3",
     "mongodb": "^2.2.9",
+    "redis": "^2.6.2",
     "yamljs": "^0.2.8"
   },
   "devDependencies": {

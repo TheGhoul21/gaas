@@ -1,12 +1,12 @@
 import {
-  GraphQLEnumType,
-  GraphQLInterfaceType,
-  GraphQLObjectType,
-  GraphQLList,
-  GraphQLNonNull,
-  GraphQLSchema,
-  GraphQLString,
-  GraphQLID
+	GraphQLEnumType,
+	GraphQLInterfaceType,
+	GraphQLObjectType,
+	GraphQLList,
+	GraphQLNonNull,
+	GraphQLSchema,
+	GraphQLString,
+	GraphQLID
 } from 'graphql/type';
 
 var YAML = require('yamljs');
@@ -15,10 +15,10 @@ const graphqlHTTP = require('express-graphql');
 
 const app = express();
 
-var TopicTypeFields =  {
+var TopicTypeFields = {
 	"id": {
 		"type": "ID",
-    "indexable":true,
+		"indexable": true,
 	},
 	"text": {
 		"type": "String"
@@ -41,7 +41,7 @@ var TopicTypeFields =  {
 var TopicFactorTypeFields = {
 	"id": {
 		"type": "ID",
-    "indexable":true,
+		"indexable": true,
 	},
 	"text": {
 		"type": "String"
@@ -50,7 +50,7 @@ var TopicFactorTypeFields = {
 var UserTypeFields = {
 	"id": {
 		"type": "ID",
-    "indexable":true,
+		"indexable": true,
 	},
 	"username": {
 		"type": "String"
@@ -59,69 +59,120 @@ var UserTypeFields = {
 
 
 var types = {
-  TopicFactor: TopicFactorTypeFields,
-  Topic: TopicTypeFields,
-  User: UserTypeFields
+	TopicFactor: TopicFactorTypeFields,
+	Topic: TopicTypeFields,
+	User: UserTypeFields
 };
 
 function* entries(obj) {
-    for (let key of Object.keys(obj)) {
-        yield [key, obj[key]];
-    }
+	for (let key of Object.keys(obj)) {
+		yield [key, obj[key]];
+	}
 }
 
 let schema = {};
 let type = {};
 
 var defaultTypes = {
-  "String": GraphQLString,
-  "String!": new GraphQLNonNull(GraphQLString),
-  "ID": new GraphQLNonNull(GraphQLID),
+	"String": GraphQLString,
+	"String!": new GraphQLNonNull(GraphQLString),
+	"ID": new GraphQLNonNull(GraphQLID),
 
 }
 
 let graphQLTypes = {};
 
+let args = {};
+
 
 for (let [key, fields] of entries(types)) {
 
-  let tempFields = {};
-  let tempArgs = {};
-  let _type;
-  for(let [fieldName, config] of entries(fields)) {
-    if(defaultTypes[config.type]) {
-      tempFields[fieldName] = { type : defaultTypes[config.type], description: '............' };
-      if(config.indexable)
-        tempArgs[fieldName] = { type : defaultTypes[config.type] };
-    }
+	var fieldsThunk = ((fields) => {
+		return function() {
 
-  }
+			let tempFields = {};
+			let tempArgs = {};
+			let _type;
+			for (let [fieldName, config] of entries(fields)) {
+				if (defaultTypes[config.type] || types[config.type]) {
+					if (defaultTypes[config.type]) {
+						tempFields[fieldName] = {
+							type: defaultTypes[config.type]
+						};
+					} else {
+						tempFields[fieldName] = {
+							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
+						};
+					}
+				}
+			}
+			return tempFields;
+		}
+	})(fields);
+
+	var argsThunk = ((fields) => {
+
+		let tempArgs = {};
+		let _type;
+		for (let [fieldName, config] of entries(fields)) {
+			if (config.indexable && (defaultTypes[config.type] || types[config.type])) {
+
+				if (defaultTypes[config.type]) {
+					tempArgs[fieldName] = {
+						type: defaultTypes[config.type]
+					};
+				} else {
+					tempArgs[fieldName] = {
+						type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
+					};
+				}
+			}
+		}
+			return tempArgs;
+
+	})(fields);
+
+	console.log(argsThunk);
+
+	var resolveThunk = ((key) => (root, args) => {
+		
+		
+		
+		return {
+			id: args.id,
+			text: key + ": " + "AAAA",
+			pros: [
+				{id:1, text:"a"},
+				{id:2, text:"b"},
+			]
+		}
+	})(key);
 
 
-  graphQLTypes[key.toLowerCase()] = new GraphQLObjectType({
-    name: key,
-    fields: () => (tempFields)
-  });
+	graphQLTypes[key.toLowerCase()] = new GraphQLObjectType({
+		name: key,
+		fields: fieldsThunk
+	});
 
 
-  schema[key.toLowerCase()] = {
-    type: graphQLTypes[key.toLowerCase()],
-    args: tempArgs,
-    resolve: function(root, args) { return {id: args.id, text: "Mario"} }
-  }
+	schema[key.toLowerCase()] = {
+		type: graphQLTypes[key.toLowerCase()],
+		args: argsThunk,
+		resolve: resolveThunk
+	}
 }
 
 const queryType = new GraphQLObjectType({
-  name: 'RootQueryType',
-  fields: () => (schema)
+	name: 'RootQueryType',
+	fields: () => (schema)
 });
 
 app.use('/graphql', graphqlHTTP({
-  schema: new GraphQLSchema({
-    query: queryType,
-    types: Object.keys(graphQLTypes).map(x => graphQLTypes[x])
-  }),
-  graphiql: true
+	schema: new GraphQLSchema({
+		query: queryType,
+		types: Object.keys(graphQLTypes).map(x => graphQLTypes[x])
+	}),
+	graphiql: true
 }));
 
-app.listen(4000);
+app.listen(process.env.PORT || 3000);

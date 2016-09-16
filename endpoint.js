@@ -11,47 +11,31 @@ import {
   GraphQLInputObjectType
 } from 'graphql/type';
 
+
+import {
+  fieldResolver,
+  resolveThunk,
+  resolveAddThunk,
+} from './resolvers';
+
+import {
+  btoa
+} from './utils'
 var YAML = require('yamljs');
 
-import redis from 'redis';
-import bluebird from 'bluebird';
-
-bluebird.promisifyAll(redis.RedisClient.prototype);
-bluebird.promisifyAll(redis.Multi.prototype);
-
-let redisClient = redis.createClient();
-
-let redisGet = bluebird.promisify(redisClient.get, {context: redisClient});
-let redisGetHash = bluebird.promisify(redisClient.hgetall, {context: redisClient});
-let redisIncr = bluebird.promisify(redisClient.incr, {context: redisClient});
-// let redisSetHash = bluebird.promisify(redisClient.hsetall, {context: redisClient});
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
 
 const app = express();
 
 
-function btoa(str) {
-  return new Buffer(str).toString('base64');
-}
+
 var requiredEnum = {
 	YES: "YES",
 	NO: "NO",
 	OPTIONAL: "OPTIONAL"
 }
 
-var testObject = {
-			id: 1,
-			text: "topic" + ": " + "AAAA",
-// 			pros: [
-// 				{id:1, text:"a"},
-// 				{id:2, text:"b"},
-// 			]
-		};
-
-redisClient.hmset('hello', testObject, function() {
-	console.log(arguments);
-});
 // var requiredType = new GraphQLEnumType ({
 // 	name: "required",
 // 	values: requiredEnum
@@ -71,13 +55,33 @@ var TopicTypeFields = {
 		"type": [
 			"TopicFactor"
 		],
-		"required": "NO"
+		"required": "NO",
+    "relation": {
+      "type": "OneToMany",
+      "localKey": "id",
+      "foreignKey": "topic",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
 	},
 	"cons": {
 		"type": [
 			"TopicFactor"
 		],
-		"required": "NO"
+		"required": "NO",
+    "relation": {
+      "type": "OneToMany",
+      "localKey": "id",
+      "foreignKey": "topic",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
 	},
 	"user": {
 		"type": "User",
@@ -101,7 +105,17 @@ var TopicFactorTypeFields = {
   },
   "topic": {
     "type": "Topic",
-    "required": "YES"
+    "required": "YES",
+    "relation": {
+      "type": "ManyToOne",
+      "localKey": "topic",
+      "foreignKey": "id",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
   }
 };
 var UserTypeFields = {
@@ -162,7 +176,8 @@ for (let [key, fields] of entries(types)) {
 					} else {
 						tempFields[fieldName] = {
 							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()],
-              resolve: ((fieldName) => (obj) => Promise.resolve(redisClient.hgetallAsync(obj[fieldName])))(fieldName)
+              // resolve: ((fieldName) => (obj) => Promise.resolve(re_______disClient.hgetallAsync(obj[fieldName])))(fieldName)
+              resolve: fieldResolver(fieldName, config)
 						};
 					}
 				}
@@ -218,21 +233,6 @@ for (let [key, fields] of entries(types)) {
 
 	})(fields);
 
-
-	var resolveThunk = ((key) => (root, args) => {
-    let value = Promise.resolve(redisClient.hgetallAsync(args.id));
-		return value;
-	})(key);
-
-	var resolveAddThunk = ((key) => (root, args) => {
-		return Promise.resolve(redisClient.incrAsync(key+"Id").then((id) => {
-      args.input.id = btoa(key.toLowerCase() + ":" + id);
-      redisClient.hmset(args.input.id, args.input);
-      return args.input;
-    }))
-	})(key);
-
-
 	graphQLTypes[key.toLowerCase()] = new GraphQLObjectType({
 		name: key,
 		fields: fieldsThunk
@@ -242,7 +242,7 @@ for (let [key, fields] of entries(types)) {
 	queries[key.toLowerCase()] = {
 		type: graphQLTypes[key.toLowerCase()],
 		args: argsThunk,
-		resolve: resolveThunk
+		resolve: resolveThunk(key)
 	}
 
 
@@ -257,10 +257,8 @@ for (let [key, fields] of entries(types)) {
         })
       }
     },
-		resolve: resolveAddThunk
+		resolve: resolveAddThunk(key, fields)
 	}
-
-
 }
 
 const queryType = new GraphQLObjectType({
@@ -281,3 +279,5 @@ app.use('/graphql', graphqlHTTP({
 }));
 
 app.listen(process.env.PORT || 3000);
+
+console.log("app listening on port " + (process.env.PORT || 3000));

@@ -6,23 +6,29 @@ import {
 	GraphQLNonNull,
 	GraphQLSchema,
 	GraphQLString,
-	GraphQLID
+	GraphQLBoolean,
+	GraphQLID,
+  GraphQLInputObjectType
 } from 'graphql/type';
 
+
+import {
+  fieldResolver,
+  resolveThunk,
+  resolveAddThunk,
+} from './resolvers';
+
+import {
+  btoa
+} from './utils'
 var YAML = require('yamljs');
 
-import redis from 'redis';
-import bluebird from 'bluebird';
-
-let redisClient = redis.createClient();
-
-let redisGet = bluebird.promisify(redisClient.get, {context: redisClient});
-let redisGetHash = bluebird.promisify(redisClient.hgetall, {context: redisClient});
-// let redisSetHash = bluebird.promisify(redisClient.hsetall, {context: redisClient});
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
 
 const app = express();
+
+
 
 var requiredEnum = {
 	YES: "YES",
@@ -30,13 +36,6 @@ var requiredEnum = {
 	OPTIONAL: "OPTIONAL"
 }
 
-
-var testObject = {
-			id: 1,
-			text: "topic" + ": " + "AAAA",
-		};
-
-redisClient.hmset('hello', testObject);
 // var requiredType = new GraphQLEnumType ({
 // 	name: "required",
 // 	values: requiredEnum
@@ -56,13 +55,33 @@ var TopicTypeFields = {
 		"type": [
 			"TopicFactor"
 		],
-		"required": "NO"
+		"required": "NO",
+    "relation": {
+      "type": "OneToMany",
+      "localKey": "id",
+      "foreignKey": "topic",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
 	},
 	"cons": {
 		"type": [
 			"TopicFactor"
 		],
-		"required": "NO"
+		"required": "NO",
+    "relation": {
+      "type": "OneToMany",
+      "localKey": "id",
+      "foreignKey": "topic",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
 	},
 	"user": {
 		"type": "User",
@@ -77,9 +96,27 @@ var TopicFactorTypeFields = {
 		"indexable": true,
 	},
 	"text": {
-		"type": "String",
+		"type": "String!",
 		"required": "YES"
-	}
+	},
+  "isPro": {
+    "type": "Boolean!",
+    "required": "YES"
+  },
+  "topic": {
+    "type": "Topic",
+    "required": "YES",
+    "relation": {
+      "type": "ManyToOne",
+      "localKey": "topic",
+      "foreignKey": "id",
+      "condition": {
+        "type": "=",
+        "fieldName": "isPro",
+        "value": true
+      }
+    }
+  }
 };
 var UserTypeFields = {
 	"id": {
@@ -87,7 +124,8 @@ var UserTypeFields = {
 		"indexable": true,
 	},
 	"username": {
-		"type": "String"
+		"type": "String",
+    "required": "YES"
 	}
 };
 
@@ -104,14 +142,16 @@ function* entries(obj) {
 	}
 }
 
-let schema = {};
+let queries = {};
+let mutations = {};
 let type = {};
 
 var defaultTypes = {
 	"String": GraphQLString,
 	"String!": new GraphQLNonNull(GraphQLString),
 	"ID": new GraphQLNonNull(GraphQLID),
-
+  "Boolean": GraphQLBoolean,
+  "Boolean!":  new GraphQLNonNull(GraphQLBoolean)
 }
 
 let graphQLTypes = {};
@@ -135,7 +175,9 @@ for (let [key, fields] of entries(types)) {
 						};
 					} else {
 						tempFields[fieldName] = {
-							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
+							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()],
+              // resolve: ((fieldName) => (obj) => Promise.resolve(re_______disClient.hgetallAsync(obj[fieldName])))(fieldName)
+              resolve: fieldResolver(fieldName, config)
 						};
 					}
 				}
@@ -143,7 +185,7 @@ for (let [key, fields] of entries(types)) {
 			return tempFields;
 		}
 	})(fields);
-	
+
 	var inputFieldsThunk = ((fields) => {
 		return function() {
 
@@ -151,7 +193,7 @@ for (let [key, fields] of entries(types)) {
 			let tempArgs = {};
 			let _type;
 			for (let [fieldName, config] of entries(fields)) {
-				if ((config.required == requiredEnum.YES || config.required == requiredEnum.OPTIONAL) && 
+				if ((config.required == requiredEnum.YES || config.required == requiredEnum.OPTIONAL) &&
 						(defaultTypes[config.type] || types[config.type])) {
 					if (defaultTypes[config.type]) {
 						tempFields[fieldName] = {
@@ -159,11 +201,12 @@ for (let [key, fields] of entries(types)) {
 						};
 					} else {
 						tempFields[fieldName] = {
-							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
+							type: defaultTypes.ID
 						};
 					}
 				}
 			}
+
 			return tempFields;
 		}
 	})(fields);
@@ -190,45 +233,51 @@ for (let [key, fields] of entries(types)) {
 
 	})(fields);
 
-
-	var resolveThunk = ((key) => (root, args) => {
-		var value = Promise.resolve(redisGetHash("hello"));		
-		return value;
-// 		return {
-// 			id: args.id,
-// 			text: key + ": " + "AAAA",
-// 			pros: [
-// 				{id:1, text:"a"},
-// 				{id:2, text:"b"},
-// 			]
-// 		}
-	})(key);
-
-
 	graphQLTypes[key.toLowerCase()] = new GraphQLObjectType({
 		name: key,
 		fields: fieldsThunk
 	});
 
 
-	schema[key.toLowerCase()] = {
+	queries[key.toLowerCase()] = {
 		type: graphQLTypes[key.toLowerCase()],
 		args: argsThunk,
-		resolve: resolveThunk
+		resolve: resolveThunk(key)
+	}
+
+
+	mutations["add" + key] = {
+		type: graphQLTypes[key.toLowerCase()],
+    name: 'add' + key,
+		args: {
+      input: {
+        type: new GraphQLInputObjectType({
+          name: key + 'Input',
+          fields: inputFieldsThunk
+        })
+      }
+    },
+		resolve: resolveAddThunk(key, fields)
 	}
 }
 
 const queryType = new GraphQLObjectType({
 	name: 'RootQueryType',
-	fields: () => (schema)
+	fields: () => (queries)
 });
 
 app.use('/graphql', graphqlHTTP({
 	schema: new GraphQLSchema({
 		query: queryType,
+    mutation: new GraphQLObjectType({
+      name: 'RootMutationType',
+      fields: () => (mutations)
+    }),
 		types: Object.keys(graphQLTypes).map(x => graphQLTypes[x])
 	}),
 	graphiql: true
 }));
 
 app.listen(process.env.PORT || 3000);
+
+console.log("app listening on port " + (process.env.PORT || 3000));

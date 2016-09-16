@@ -34,15 +34,9 @@ var requiredEnum = {
 var testObject = {
 			id: 1,
 			text: "topic" + ": " + "AAAA",
-// 			pros: [
-// 				{id:1, text:"a"},
-// 				{id:2, text:"b"},
-// 			]
 		};
 
-redisClient.hmset('hello', testObject, function() {
-	console.log(arguments);
-});
+redisClient.hmset('hello', testObject);
 // var requiredType = new GraphQLEnumType ({
 // 	name: "required",
 // 	values: requiredEnum
@@ -198,10 +192,7 @@ for (let [key, fields] of entries(types)) {
 
 
 	var resolveThunk = ((key) => (root, args) => {
-		var value = Promise.resolve(redisGetHash("hello"));
-		
-		console.log(value);
-		
+		var value = Promise.resolve(redisGetHash("hello"));		
 		return value;
 // 		return {
 // 			id: args.id,

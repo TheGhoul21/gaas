@@ -1,6 +1,6 @@
 import redis from 'redis';
 import bluebird from 'bluebird';
-
+import pluralize from 'pluralize';
 bluebird.promisifyAll(redis.RedisClient.prototype);
 bluebird.promisifyAll(redis.Multi.prototype);
 

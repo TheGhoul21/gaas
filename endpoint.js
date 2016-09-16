@@ -11,7 +11,7 @@ import {
   GraphQLInputObjectType
 } from 'graphql/type';
 
-
+import pluralize from 'pluralize';
 import {
   fieldResolver,
   resolveThunk,

@@ -17,6 +17,7 @@
     "graphql": "^0.7.0",
     "graphql-relay": "^0.4.3",
     "mongodb": "^2.2.9",
+    "pluralize": "^3.0.0",
     "redis": "^2.6.2",
     "yamljs": "^0.2.8"
   },

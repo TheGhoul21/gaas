@@ -5,15 +5,20 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start-dev": "nodemon endpoint.js --exec babel-node"
+    "start-dev": "nodemon endpoint.js --exec babel-node",
+    "sandbox": "nodemon sandbox.js --exec babel-node",
+    "aws": "nodemon aws.js --exec babel-node"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "assert": "^1.4.1",
+    "aws-sdk": "^2.6.4",
+    "babel-plugin-transform-class-properties": "^6.11.5",
     "bluebird": "^3.4.6",
     "express": "^4.14.0",
     "express-graphql": "^0.5.4",
+    "graph.ql": "^2.0.0",
     "graphql": "^0.7.0",
     "graphql-relay": "^0.4.3",
     "mongodb": "^2.2.9",

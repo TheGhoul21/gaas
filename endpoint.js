@@ -9,132 +9,36 @@ import {
 	GraphQLBoolean,
 	GraphQLID,
   GraphQLInputObjectType
-} from 'graphql/type';
+	} from 'graphql/type';
 
 import pluralize from 'pluralize';
 import {
   fieldResolver,
   resolveThunk,
   resolveAddThunk,
+	resolveAddRelationItemToParent,
+	entityResolver
 } from './resolvers';
+
+import { getAllEntities, parseType, defaultTypes } from './sandbox';
 
 import {
   btoa
 } from './utils'
-var YAML = require('yamljs');
 
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
 
 const app = express();
 
+import AppSchema from './AppSchema';
+// AppSchema
+// 	.get('test')
+// 	.then(console.log);
 
 
-var requiredEnum = {
-	YES: "YES",
-	NO: "NO",
-	OPTIONAL: "OPTIONAL"
-}
-
-// var requiredType = new GraphQLEnumType ({
-// 	name: "required",
-// 	values: requiredEnum
-// });
 
 
-var TopicTypeFields = {
-	"id": {
-		"type": "ID",
-		"indexable": true,
-	},
-	"text": {
-		"type": "String",
-		"required": "YES",
-	},
-	"pros": {
-		"type": [
-			"TopicFactor"
-		],
-		"required": "NO",
-    "relation": {
-      "type": "OneToMany",
-      "localKey": "id",
-      "foreignKey": "topic",
-      "condition": {
-        "type": "=",
-        "fieldName": "isPro",
-        "value": true
-      }
-    }
-	},
-	"cons": {
-		"type": [
-			"TopicFactor"
-		],
-		"required": "NO",
-    "relation": {
-      "type": "OneToMany",
-      "localKey": "id",
-      "foreignKey": "topic",
-      "condition": {
-        "type": "=",
-        "fieldName": "isPro",
-        "value": true
-      }
-    }
-	},
-	"user": {
-		"type": "User",
-		"required": "NO",
-		"defaultUser": true
-	}
-};
-
-var TopicFactorTypeFields = {
-	"id": {
-		"type": "ID",
-		"indexable": true,
-	},
-	"text": {
-		"type": "String!",
-		"required": "YES"
-	},
-  "isPro": {
-    "type": "Boolean!",
-    "required": "YES"
-  },
-  "topic": {
-    "type": "Topic",
-    "required": "YES",
-    "relation": {
-      "type": "ManyToOne",
-      "localKey": "topic",
-      "foreignKey": "id",
-      "condition": {
-        "type": "=",
-        "fieldName": "isPro",
-        "value": true
-      }
-    }
-  }
-};
-var UserTypeFields = {
-	"id": {
-		"type": "ID",
-		"indexable": true,
-	},
-	"username": {
-		"type": "String",
-    "required": "YES"
-	}
-};
-
-
-var types = {
-	TopicFactor: TopicFactorTypeFields,
-	Topic: TopicTypeFields,
-	User: UserTypeFields
-};
 
 function* entries(obj) {
 	for (let key of Object.keys(obj)) {
@@ -146,137 +50,180 @@ let queries = {};
 let mutations = {};
 let type = {};
 
-var defaultTypes = {
-	"String": GraphQLString,
-	"String!": new GraphQLNonNull(GraphQLString),
-	"ID": new GraphQLNonNull(GraphQLID),
-  "Boolean": GraphQLBoolean,
-  "Boolean!":  new GraphQLNonNull(GraphQLBoolean)
-}
-
-let graphQLTypes = {};
-
-let args = {};
+let name, fields, spec, outputType, inputType;
 
 
-for (let [key, fields] of entries(types)) {
+let outputTypes = {};
+let inputTypes = {};
 
-	var fieldsThunk = ((fields) => {
-		return function() {
-
-			let tempFields = {};
-			let tempArgs = {};
-			let _type;
-			for (let [fieldName, config] of entries(fields)) {
-				if (defaultTypes[config.type] || types[config.type]) {
-					if (defaultTypes[config.type]) {
-						tempFields[fieldName] = {
-							type: defaultTypes[config.type]
-						};
-					} else {
-						tempFields[fieldName] = {
-							type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()],
-              // resolve: ((fieldName) => (obj) => Promise.resolve(re_______disClient.hgetallAsync(obj[fieldName])))(fieldName)
-              resolve: fieldResolver(fieldName, config)
-						};
-					}
-				}
-			}
-			return tempFields;
+let NodeInterface = new GraphQLInterfaceType({
+	name: 'Node',
+	fields: {
+		id: {
+			type: new GraphQLNonNull(GraphQLID)
 		}
-	})(fields);
-
-	var inputFieldsThunk = ((fields) => {
-		return function() {
-
-			let tempFields = {};
-			let tempArgs = {};
-			let _type;
-			for (let [fieldName, config] of entries(fields)) {
-				if ((config.required == requiredEnum.YES || config.required == requiredEnum.OPTIONAL) &&
-						(defaultTypes[config.type] || types[config.type])) {
-					if (defaultTypes[config.type]) {
-						tempFields[fieldName] = {
-							type: defaultTypes[config.type]
-						};
-					} else {
-						tempFields[fieldName] = {
-							type: defaultTypes.ID
-						};
-					}
-				}
-			}
-
-			return tempFields;
-		}
-	})(fields);
-
-	let argsThunk = ((fields) => {
-
-		let tempArgs = {};
-		let _type;
-		for (let [fieldName, config] of entries(fields)) {
-			if (config.indexable && (defaultTypes[config.type] || types[config.type])) {
-
-				if (defaultTypes[config.type]) {
-					tempArgs[fieldName] = {
-						type: defaultTypes[config.type]
-					};
-				} else {
-					tempArgs[fieldName] = {
-						type: config.type.join ? new GraphQLList(graphQLTypes[config.type[0].toLowerCase()]) : graphQLTypes[config.type.toLowerCase()]
-					};
-				}
-			}
-		}
-			return tempArgs;
-
-	})(fields);
-
-	graphQLTypes[key.toLowerCase()] = new GraphQLObjectType({
-		name: key,
-		fields: fieldsThunk
-	});
-
-
-	queries[key.toLowerCase()] = {
-		type: graphQLTypes[key.toLowerCase()],
-		args: argsThunk,
-		resolve: resolveThunk(key)
+	},
+	resolveType: function(root, args) {
+		console.log(args.id);
 	}
-
-
-	mutations["add" + key] = {
-		type: graphQLTypes[key.toLowerCase()],
-    name: 'add' + key,
-		args: {
-      input: {
-        type: new GraphQLInputObjectType({
-          name: key + 'Input',
-          fields: inputFieldsThunk
-        })
-      }
-    },
-		resolve: resolveAddThunk(key, fields)
-	}
-}
-
-const queryType = new GraphQLObjectType({
-	name: 'RootQueryType',
-	fields: () => (queries)
 });
 
-app.use('/graphql', graphqlHTTP({
-	schema: new GraphQLSchema({
-		query: queryType,
-    mutation: new GraphQLObjectType({
-      name: 'RootMutationType',
-      fields: () => (mutations)
-    }),
-		types: Object.keys(graphQLTypes).map(x => graphQLTypes[x])
-	}),
-	graphiql: true
-}));
+
+let rootQueryFields = {
+	node: {
+		type: NodeInterface,
+		args: {
+			id: {
+				type: new GraphQLNonNull(GraphQLID)
+			},
+		},
+		resolve: (root, args) => {
+			console.log(args);
+		}
+	}
+};
+
+let rootMutationFields = {};
+
+function getOutputFieldsThunk(entityName, fields) {
+	return () => {
+		let tempOutputFields = {};
+		for(var i in fields) {
+			spec = parseType(fields[i].type);
+
+			// spec.typeName, spec.required, spec.isArray
+			let type;
+			if(defaultTypes[spec.typeName]) {
+				type = defaultTypes[spec.typeName];
+			} else {
+				type = outputTypes[spec.typeName + 'Type'];
+			}
+
+			if(spec.isArray) {
+				type = new GraphQLList(type);
+			}
+			if(spec.required && spec.typeName != 'ID') {
+				type = new GraphQLNonNull(type);
+			}
+			tempOutputFields[fields[i].name] = {
+				type: type,
+				resolve: fieldResolver(entityName, fields[i].name, spec)
+			};
+		}
+		return tempOutputFields;
+	}
+}
+
+function getInputFieldsThunk(entityName, fields) {
+	return () => {
+		let tempInputFields = {};
+		for(var i in fields) {
+			spec = parseType(fields[i].type);
+
+			if(spec.typeName != 'ID' && !spec.isArray) {
+				// spec.typeName, spec.required, spec.isArray
+				let type;
+				if(defaultTypes[spec.typeName]) {
+					type = defaultTypes[spec.typeName];
+				} else {
+					type = GraphQLString;
+				}
+
+				if(spec.isArray) {
+					type = new GraphQLList(type);
+				}
+				if(spec.required) {
+					type = new GraphQLNonNull(type);
+				}
+				tempInputFields[fields[i].name] = {
+					type: type
+				};
+			}
+		}
+		return tempInputFields;
+	}
+}
+
+Promise.resolve(getAllEntities())
+	.then(function(types) {
+		for(var i in types) {
+			name = types[i].name;
+			fields = types[i].fields;
+
+			// first for create output and input types based on the spec
+			let fieldsThunk = getOutputFieldsThunk(name, fields);
+			outputType = { name : name + 'Type', fields : fieldsThunk, interfaces: [NodeInterface] };
+			outputTypes[outputType.name] = new GraphQLObjectType(outputType);
+			inputType = { name : name + 'Input', fields: getInputFieldsThunk(name, fields) };
+			inputTypes[inputType.name] = new GraphQLInputObjectType(inputType);
+
+			rootQueryFields[pluralize(name.toLowerCase(), 1)] = {
+				type: outputTypes[outputType.name],
+				args: {
+					id: {
+						type: new GraphQLNonNull(GraphQLID)
+					},
+				},
+				resolve: entityResolver()
+			}
+			rootMutationFields['Introduce' + pluralize(name, 1)] = {
+				type: outputTypes[outputType.name],
+				args: {
+					input: {
+						type: new GraphQLNonNull(inputTypes[inputType.name])
+					},
+				},
+				resolve: resolveAddThunk(name)
+			}
+
+			for(var i in fields) {
+				let spec = parseType(fields[i].type);
+				if(spec.entityRelation) {
+					let fieldName = pluralize(fields[i].name,1);
+					let mutationName = "Add" + fieldName[0].toUpperCase() + fieldName.substring(1) + "To"+ name;
+
+					rootMutationFields[mutationName] = {
+						type: outputTypes[outputType.name],
+						args: {
+							input: {
+								type: new GraphQLNonNull(new GraphQLInputObjectType({
+									name: mutationName + 'Input',
+									fields: ((_spec) => () => ({
+											_parent: {type: new GraphQLNonNull(GraphQLString)},
+											_child: {type: GraphQLString},
+											_childObject: {type: inputTypes[_spec.typeName + 'Input']}
+										})
+									)(spec)
+								}))
+							},
+						},
+						resolve: resolveAddRelationItemToParent(name, fields[i].name, spec)
+					}
+				}
+			}
+
+		}
+		return Promise.resolve([rootQueryFields, rootMutationFields]);
+	})
+	.then(function(rootFields) {
+		app.use('/graphql', graphqlHTTP({
+			schema: new GraphQLSchema({
+				query: new GraphQLObjectType({
+					name: 'RootQueryType',
+					fields: () => (rootFields[0])
+				}),
+		    mutation: new GraphQLObjectType({
+		      name: 'RootMutationType',
+		      fields: () => (rootFields[1])
+		    }),
+				types: Object.keys(outputTypes).map(x => outputTypes[x])
+			}),
+			graphiql: true
+		}));
+	})
+	.catch(function(error) {
+		console.error(error.stack);
+	});
 
 app.listen(process.env.PORT || 3000);
 

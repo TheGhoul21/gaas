@@ -18,13 +18,210 @@ import {
 } from 'graphql/type';
 
 import { btoa, atob } from './utils';
+import consolidate from 'consolidate';
+import swig from 'swig';
+import bcrypt from 'bcrypt-nodejs';
 
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
+var session = require('express-session');
+var RedisStore = require('connect-redis')(session);
 
 const app = express();
 const appEntities = express();
+var bodyParser = require('body-parser')
 
+app.use(express.static('public'));
+app.use('/bower_components',  express.static(__dirname + '/bower_components'));
+app.use('/jquery',  express.static(__dirname + '/node_modules/jquery/dist'));
+app.use('/semantic',  express.static(__dirname + '/semantic/dist'));
+
+// let swig = consolidate.swig;
+
+consolidate.requires.swig = swig;
+consolidate.requires.swig.setFilter('path', function(path) {
+	switch(path) {
+		case 'user_login': return "/login"; break;
+	}
+})
+
+app.engine('html.twig', consolidate.swig);
+
+app.set('view engine', 'html.twig');
+app.set('views', __dirname + '/views');
+app.use( bodyParser.json() );       // to support JSON-encoded bodies
+app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
+  extended: true
+}));
+
+
+
+app.use(session({
+    store: new RedisStore({}),
+    secret: 'keyboard cat'
+}));
+
+app.get('/', function(req, res, next) {
+
+	console.log(res.render);
+	res.render('index');
+});
+
+app.use('/login', function(req, res,next) {
+
+
+
+  if(req.method== "POST") {
+    let email = req.body.email;
+    let password = req.body.password;
+
+    var url = 'mongodb://localhost:27017/website';
+    MongoClient
+      .connect(url)
+      .then(function(db) {
+        let collection = db.collection('tenants');
+        collection
+        .findOne({email: email})
+        .then(function(user) {
+          if(bcrypt.compareSync(password, user.password)) {
+            req.session.user = user;
+            res.redirect('/dashboard');
+          } else {
+            res.render('login', {
+              title: 'Login',
+              error: 'Bad credentials',
+							path: function() {
+								console.log(arguments);
+							}
+            });
+          }
+
+        })
+        .catch(function(error) {
+          console.error(error.stack);
+        });
+      });
+    } else {
+      res.render('login', {
+        title: 'Login'
+      });
+    }
+});
+
+
+app.get(['/dashboard', '/dashboard/:appId', '/dashboard/:appId/:collectionName'], function(req, res, next) {
+
+  var baseUrl = 'mongodb://localhost:27017/';
+
+
+	let appId = req.params.appId;
+	let collectionName = req.params.collectionName;
+	let tempalateData = {title: 'Dashboard' };
+	let schemaDB = null;
+  MongoClient
+    .connect(baseUrl + 'website')
+    .then(function(db) {
+
+
+      let collection = db.collection('tenants');
+      collection
+      .aggregate([
+        {
+          $match: {_id: ObjectId(req.session.user._id)},
+        },
+        {
+          $unwind: '$apps'
+        },
+        {
+          $lookup: {
+          from: 'apps',
+          localField: 'apps',
+          foreignField: '_id',
+          as: 'apps'
+        }
+      }])
+      .next(function(err, docs) {
+				tempalateData.apps = docs.apps;
+				console.log(req.session.user.apps);
+        if(appId) {
+					if(req.session.user.apps.indexOf(appId) == -1) {
+							appId = docs.apps[0];
+					}
+				}
+
+
+
+				if(appId) {
+					return MongoClient
+					.connect(baseUrl + appId)
+					.then(function(db) {
+						schemaDB = db;
+						return db.collection('_schema')
+						.find({}, {name: 'name'})
+						.toArray()
+					})
+					.then(function(result) {
+						console.log("collections", result);
+						if(result) {
+							tempalateData.collections = result;
+						}
+
+						if(schemaDB) {
+							if(!collectionName) {
+								collectionName = 'User';
+							}
+							return schemaDB.listCollections().toArray()
+							.then(function(items) {
+								console.log("listCollections", items);
+								var found = false;
+									for(var i in items)  {
+										if(items[i].name == collectionName) {
+											found = true;
+										}
+									}
+
+									if(!found) {
+										collectionName = 'User';
+									}
+
+									return schemaDB.collection(collectionName)
+									.find({}).toArray();
+							})
+							.then(function(items) {
+								console.log("items", items);
+
+								tempalateData.collectionData = items;
+								return Promise.resolve(true);
+							})
+
+						}
+
+						return Promise.resolve(false);
+					})
+					.then(function(result) {
+						console.log("last promise", result);
+						console.log("data", tempalateData);
+						res.render('dashboard', tempalateData);
+					})
+					.catch(function(error) {
+						console.error(error.stack);
+					})
+
+
+
+
+				}
+				return Promise.resolve(false);
+
+      })
+
+
+      ;
+
+    });
+
+
+})
 
 export default class AppSchema {
   static instance = null;
@@ -89,7 +286,7 @@ export default class AppSchema {
         "isArray" : false
     });
 
-    let collection = this.db.collection('schema');
+    let collection = this.db.collection('_schema');
     return collection.ensureIndex({name: 1}, {unique:true}).then(function(result) {
       return collection.insert({
         name: name,
@@ -116,7 +313,7 @@ export default class AppSchema {
     let entityName = field.entity;
 
     field = new Field(field).store();
-    let collection = this.db.collection('schema');
+    let collection = this.db.collection('_schema');
 
     return collection
       .count({name: entityName, 'fields.name': field.name})
@@ -128,9 +325,7 @@ export default class AppSchema {
           $push: {
             fields: field
           }
-        }, {
-          returnNewDocument: true
-        })
+        }, {returnOriginal: false, returnNewDocument : true})
       })
       .then(function(result) {
         return Promise.resolve(result.value);
@@ -155,7 +350,7 @@ export default class AppSchema {
       updateObject['fields.$.' + i] = field[i];
     }
 
-    let collection = this.db.collection('schema');
+    let collection = this.db.collection('_schema');
 
     return collection
       .count({name: entityName, 'fields.name': fieldName})
@@ -166,9 +361,7 @@ export default class AppSchema {
           'fields.name': fieldName
         }, {
           $set: updateObject
-        }, {
-          returnNewDocument: true
-        })
+        },{returnOriginal: false, returnNewDocument : true})
       })
       .then(function(result) {
         return Promise.resolve(result.value);
@@ -181,7 +374,7 @@ export default class AppSchema {
     let entityName = field.entity;
 
     field = new Field(field).store();
-    let collection = this.db.collection('schema');
+    let collection = this.db.collection('_schema');
 
     return collection
       .count({name: entityName, 'fields.name': field.name})
@@ -195,9 +388,7 @@ export default class AppSchema {
               name: field.name
             }
           }
-        }, {
-          returnNewDocument: true
-        })
+        }, {returnOriginal: false, returnNewDocument : true})
       })
       .then(function(result) {
         return Promise.resolve(result.value);
@@ -206,7 +397,7 @@ export default class AppSchema {
 
   fetchSchema() {
     var self = this;
-    return this.db.collection('schema').find({})
+    return this.db.collection('_schema').find({})
       .toArray()
       .then(function(entities) {
         self.schema = entities;
@@ -227,6 +418,7 @@ export default class AppSchema {
   getOutputFieldsThunk(entityName, fields) {
   	return () => {
   		let tempOutputFields = {};
+
   		for(var i in fields) {
   			// spec = parseType(fields[i].type);
         let spec = fields[i];
@@ -286,6 +478,12 @@ export default class AppSchema {
     return this.db.collection(name)
     .findOne({_id: ObjectId(atob(args.id).split(':')[1])  })
   }
+  resolveEntityByAttribute =
+  (name, fieldName, spec) =>
+  (root, args) =>
+  this.db.collection(name)
+      .findOne({[fieldName]: spec.isEntityType ? ObjectId(this.decodeId(args[fieldName]).id) : args[fieldName] })
+
 
   decodeId(id) {
     let decoded = atob(id).split(':');
@@ -304,8 +502,6 @@ export default class AppSchema {
       if(fieldName == 'id' && root._id) {
         return btoa(entityName + ":" + root._id);
       }
-
-
       if(spec.isEntityType) {
 
         let collection = this.db.collection(spec.type);
@@ -314,10 +510,6 @@ export default class AppSchema {
         } else {
           return root[fieldName] ? collection.find({_id: root[fieldName]}) : null;
         }
-        // .then(function(result) {
-        //
-        //   console.log(result);
-        // })
       }
       return root[fieldName]
     }
@@ -327,9 +519,6 @@ export default class AppSchema {
     return (root, args) => {
         let collection = this.db.collection(entityName);
 
-        // let id = ObjectId().toString();
-        // id = id.substr(18) + id.substr(0, 8);
-        // args.input._id = id;
         delete args.id;
         return collection.insert(args.input)
         .then(function(result) {
@@ -464,7 +653,7 @@ export default class AppSchema {
 			inputType = { name : name + 'Input', fields: this.getInputFieldsThunk(name, fields) };
 			this.inputTypes[inputType.name] = new GraphQLInputObjectType(inputType);
 
-			this.rootQueryFields[pluralize(name.toLowerCase(), 1)] = {
+			this.rootQueryFields[pluralize(name, 1)] = {
 				type: this.outputTypes[outputType.name],
 				args: {
 					id: {
@@ -473,6 +662,7 @@ export default class AppSchema {
 				},
 				resolve: this.resolveEntity(name)
 			}
+
 			this.rootMutationFields['Introduce' + pluralize(name, 1)] = {
 				type: this.outputTypes[outputType.name],
 				args: {
@@ -495,9 +685,9 @@ export default class AppSchema {
 
 			for(var i in fields) {
         spec = fields[i];
+				let fieldName = pluralize(fields[i].name,1);
+				let fieldNamePlural = pluralize(fields[i].name,2);
 				if(spec.isEntityType) {
-					let fieldName = pluralize(fields[i].name,1);
-
 					let mutationName = "Add" + fieldName[0].toUpperCase() + fieldName.substring(1) + "To"+ name;
 					this.rootMutationFields[mutationName] = {
 						type: this.outputTypes[outputType.name],
@@ -516,7 +706,27 @@ export default class AppSchema {
 						},
 						resolve: this.resolveAddRelationItemToParent(name, fields[i].name, spec)
 					}
-				}
+          this.rootQueryFields[pluralize(name, 1) + "By" + fieldName[0].toUpperCase() + fieldName.substr(1) ] = {
+    				type: this.outputTypes[outputType.name],
+    				args: {
+    					[!spec.isArray ? fieldName : fieldNamePlural]: {
+    						type: GraphQLString
+    					},
+    				},
+    				resolve: this.resolveEntityByAttribute(name, !spec.isArray ? fieldName : fieldNamePlural, spec)
+    			}
+
+				} else {
+          this.rootQueryFields[pluralize(name, 1) + "By" + fieldName[0].toUpperCase() + fieldName.substr(1) ] = {
+    				type: this.outputTypes[outputType.name],
+    				args: {
+    					[fieldName]: {
+    						type: AppSchema.defaultTypes[spec.type]
+    					},
+    				},
+    				resolve: this.resolveEntityByAttribute(name, fieldName, spec)
+    			}
+        }
 			}
 
 		}
@@ -527,117 +737,122 @@ export default class AppSchema {
     return this.schema;
   }
 }
-AppSchema.get('test').then(appSchema => {
-  let schema = Schema(`
-  type Field {
-    name: String!
-    type: String
-    isArray: Boolean
-    isEntityType: Boolean
-    inputRequired: Boolean
-    outputRequired: Boolean
-    entity: Entity
-  }
 
-  type Entity {
-    fields: [Field]
-    name: String!
-  }
-
-  input FieldInput {
-    name: String!
-    type: String!
-    entity: String
-    isArray: Boolean
-    inputRequired: Boolean
-    outputRequired: Boolean
-  }
-
-  input FieldRemove {
-    entity: String!
-    name: String!
-  }
-  input FieldEdit {
-    entity: String!
-    name: String!
-    isArray: Boolean
-    inputRequired: Boolean
-    outputRequired: Boolean
-  }
-
-  input EntityInput {
-    name: String!
-    fields: [FieldInput]
-  }
-
-  type Query {
-    entity(name:String!): Entity
-    field(name:String!): Field
-    entities: [Entity]
-    fields(entityName:String!): [Field]
-  }
-  type Mutation {
-    addEntity(input: EntityInput!) :Entity
-    addFieldToEntity(input: FieldInput!) :Entity
-    editFieldInEntity(input: FieldEdit!) :Entity
-    removeFieldFromEntity(input: FieldRemove!) :Entity
-  }
-  `, {
-    Query: {
-      entity(root, args) {
-
-      },
-      field(root, args) {
-      },
-      entities(root, args) {
-        return appSchema.getSchema();
-      },
-      fields(root, args) {
-      }
-    },
-    Mutation: {
-      addEntity(root, args) {
-        if(!args.input.fields) {
-          args.input.fields = [];
-        }
-        return appSchema.addEntity(args.input);
-      },
-      addFieldToEntity(root, args) {
-        return appSchema.addFieldToEntity(args.input);
-      },
-      editFieldInEntity(root, args) {
-        return appSchema.editFieldInEntity(args.input);
-      },
-      removeFieldFromEntity(root, args) {
-        return appSchema.removeFieldFromEntity(args.input);
-      }
+export function start(appId) {
+  return AppSchema.get(appId).then(appSchema => {
+    let schema = Schema(`
+    type Field {
+      name: String!
+      type: String
+      isArray: Boolean
+      isEntityType: Boolean
+      inputRequired: Boolean
+      outputRequired: Boolean
+      entity: Entity
     }
+
+    type Entity {
+      fields: [Field]
+      name: String!
+    }
+
+    input FieldInput {
+      name: String!
+      type: String!
+      entity: String
+      isArray: Boolean
+      inputRequired: Boolean
+      outputRequired: Boolean
+    }
+
+    input FieldRemove {
+      entity: String!
+      name: String!
+    }
+    input FieldEdit {
+      entity: String!
+      name: String!
+      isArray: Boolean
+      inputRequired: Boolean
+      outputRequired: Boolean
+    }
+
+    input EntityInput {
+      name: String!
+      fields: [FieldInput]
+    }
+
+    type Query {
+      entity(name:String!): Entity
+      field(name:String!): Field
+      entities: [Entity]
+      fields(entityName:String!): [Field]
+    }
+    type Mutation {
+      addEntity(input: EntityInput!) :Entity
+      addFieldToEntity(input: FieldInput!) :Entity
+      editFieldInEntity(input: FieldEdit!) :Entity
+      removeFieldFromEntity(input: FieldRemove!) :Entity
+    }
+    `, {
+      Query: {
+        entity(root, args) {
+
+        },
+        field(root, args) {
+        },
+        entities(root, args) {
+          return appSchema.getSchema();
+        },
+        fields(root, args) {
+        }
+      },
+      Mutation: {
+        addEntity(root, args) {
+          if(!args.input.fields) {
+            args.input.fields = [];
+          }
+          return appSchema.addEntity(args.input);
+        },
+        addFieldToEntity(root, args) {
+          return appSchema.addFieldToEntity(args.input);
+        },
+        editFieldInEntity(root, args) {
+          return appSchema.editFieldInEntity(args.input);
+        },
+        removeFieldFromEntity(root, args) {
+          return appSchema.removeFieldFromEntity(args.input);
+        }
+      }
+    });
+    // schema('mutation {  editFieldInEntity(input: {entity:"Topic", name: "user", outputRequired: false}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
+    // schema('mutation {  addFieldToEntity(input: {entity:"Topic", type: "TopicFactor", name: "pros", isArray: true}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
+
+    app.use('/schema', graphqlHTTP({schema: schema.schema, graphiql: true}));
+    // app.get('/schema', function(result){
+    //   console.log(result);
+    // });
+
+    app.use('/graphql', graphqlHTTP({
+      schema: new GraphQLSchema({
+        query: new GraphQLObjectType({
+          name: 'RootQueryType',
+          fields: () => appSchema.rootQueryFields
+        }),
+        mutation: Object.keys(appSchema.rootMutationFields).length > 0 ? new GraphQLObjectType({
+          name: 'RootMutationType',
+          fields: () => appSchema.rootMutationFields
+        }) : null,
+        types: Object.keys(appSchema.outputTypes).map(x => appSchema.outputTypes[x])
+      }),
+      graphiql: true
+    }));
+  })
+  .catch(function(error) {
+    console.error(error.stack);
   });
-  // schema('mutation {  editFieldInEntity(input: {entity:"Topic", name: "user", outputRequired: false}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
-  // schema('mutation {  addFieldToEntity(input: {entity:"Topic", type: "TopicFactor", name: "pros", isArray: true}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
+}
 
-
-
-
-
-  app.use('/graphql', graphqlHTTP({
-    schema: new GraphQLSchema({
-      query: new GraphQLObjectType({
-        name: 'RootQueryType',
-        fields: () => appSchema.rootQueryFields
-      }),
-      mutation: new GraphQLObjectType({
-        name: 'RootMutationType',
-        fields: () => appSchema.rootMutationFields
-      }),
-      types: Object.keys(appSchema.outputTypes).map(x => appSchema.outputTypes[x])
-    }),
-    graphiql: true
-  }));
-})
-.catch(function(error) {
-  console.error(error.stack);
-});
 
 app.listen(3001);
 console.log("secondary endpoint listening on port 3001");
@@ -646,6 +861,7 @@ class Field {
   isArray = false;
   type = "";
   isEntityType = false;
+  hidden = false;
 
   inputRequired = false;
   outputRequired = false;
@@ -658,6 +874,7 @@ class Field {
     this.inputRequired = configMap.inputRequired || this.inputRequired;
     this.outputRequired = configMap.outputRequired || this.outputRequired;
     this.isArray = configMap.isArray || this.isArray;
+    this.hidden = configMap.hidden || this.hidden;
     this.isEntityType = AppSchema.defaultTypes[this.type] ? false : true;
   }
 

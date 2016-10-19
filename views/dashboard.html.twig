@@ -1,0 +1,24 @@
+{% extends 'base_app.html.twig' %}
+
+
+{% block body %}
+<div class="ui vertical  inverted menu sidebar" style="width: 250px! important;">
+  {% for app in apps %}
+    <div class="ui dropdown item {% if loop.index == 1 %} active {% endif %}">
+      <!-- <a href="/dashboard/{{app._id}}"> -->
+      {{ app.name }}
+      <i class="dropdown icon"></i>
+      <div class="menu">
+        <a class="item">Electronics</a>
+        <a class="item">Automotive</a>
+        <a class="item">Home</a>
+      </div>
+    <!-- </a> -->
+  </div>
+  {% endfor %}
+</div>
+
+<div class="article">
+{% include 'collection.html.twig' with {collectionData: collectionData }%}
+</div>
+{% endblock %}

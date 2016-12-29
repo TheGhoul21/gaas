@@ -1,84 +1,84 @@
-.navbar {
-    padding: 15px 0;
-    border: none;
-    background: #000;
+.hidden.menu {
+  display: none;
 }
 
-.navbar .uk-navbar-content,
-.navbar .uk-navbar-brand,
-.navbar .uk-navbar-toggle {
-    height: 40px;
-    margin-top: 0;
-    text-shadow: none;
+.masthead.segment {
+  min-height: 700px;
+  padding: 1em 0em;
+}
+.masthead .logo.item img {
+  margin-right: 1em;
+}
+.masthead .ui.menu .ui.button {
+  margin-left: 0.5em;
+}
+.masthead h1.ui.header {
+  margin-top: 3em;
+  margin-bottom: 0em;
+  font-size: 4em;
+  font-weight: normal;
+}
+.masthead h2 {
+  font-size: 1.7em;
+  font-weight: normal;
 }
 
-.navbar .uk-navbar-nav > li > a {
-    height: 40px;
-    margin: 0;
-    border: none;
-    border-radius: 3px !important;
-    text-shadow: none;
-    font-size: 15px;
+.ui.vertical.stripe {
+  padding: 8em 0em;
+}
+.ui.vertical.stripe h3 {
+  font-size: 2em;
+}
+.ui.vertical.stripe .button + h3,
+.ui.vertical.stripe p + h3 {
+  margin-top: 3em;
+}
+.ui.vertical.stripe .floated.image {
+  clear: both;
+}
+.ui.vertical.stripe p {
+  font-size: 1.33em;
+}
+.ui.vertical.stripe .horizontal.divider {
+  margin: 3em 0em;
 }
 
-.navbar .uk-navbar-nav > li { margin-left: 20px; }
-
-/* Hover */
-.navbar .uk-navbar-nav > li:hover > a,
-.navbar .uk-navbar-nav > li > a:focus,
-.navbar .uk-navbar-nav > li.uk-open > a {
-    border: none;
-    color: #FFF;
+.quote.stripe.segment {
+  padding: 0em;
+}
+.quote.stripe.segment .grid .column {
+  padding-top: 5em;
+  padding-bottom: 5em;
 }
 
-/* Active */
-.navbar .uk-navbar-nav > li.uk-active > a {
-    background-color: #2BA3D4;
-    color: #FFF;
+.footer.segment {
+  padding: 5em 0em;
 }
 
-/* OnClick */
-.navbar .uk-navbar-nav > li > a:active { background-color: transparent; }
-
-/*
- * Nav
- */
-
-.nav > li > a { color: #777; }
-
-/* Hover */
-.nav > li > a:hover,
-.nav > li > a:focus,
-.nav > li.uk-active > a  {
-    background: #F5F5F5;
-    color: #444;
+.secondary.pointing.menu .toc.item {
+  display: none;
 }
 
-/* Sub-object: `nav-header` */
-.nav .uk-nav-header {
-    color: #222;
-    font-weight: normal;
-}
-
-/*
- * Nav
- */
-
-.subnav > li:nth-child(n+2) { margin-left: 20px; }
-
-.uk-navbar-nav>li.uk-open>a, .uk-navbar-nav>li:hover>a, .uk-navbar-nav>li>a:focus {
-    background-color: transparent;
-    color: #666;
-    outline: 0;
-    position: relative;
-    z-index: 1;
-    border-left-color: rgba(0,0,0,.1);
-    border-right-color: rgba(0,0,0,.1);
-    border-top-color: rgba(0,0,0,.1);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,.1);
-}
-
-.uk-panel-custom {
-    border: 1px solid #666;
-    background-color: #333;
+@media only screen and (max-width: 700px) {
+  .ui.fixed.menu {
+    display: none !important;
+  }
+  .secondary.pointing.menu .item,
+  .secondary.pointing.menu .menu {
+    display: none;
+  }
+  .secondary.pointing.menu .toc.item {
+    display: block;
+  }
+  .masthead.segment {
+    min-height: 350px;
+  }
+  .masthead h1.ui.header {
+    font-size: 2em;
+    margin-top: 1.5em;
+  }
+  .masthead h2 {
+    margin-top: 0.5em;
+    font-size: 1.5em;
+  }
 }

@@ -22,6 +22,15 @@ import consolidate from 'consolidate';
 import swig from 'swig';
 import bcrypt from 'bcrypt-nodejs';
 
+import App from './src/components/App.jsx';
+import React from 'react';
+import ReactDOMServer from 'react-dom/server';
+
+
+import {connectionDefinitions, connectionArgs} from 'graphql-relay';
+import connectionFromMongoCursor from 'relay-mongodb-connection';
+
+
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
 var session = require('express-session');
@@ -35,6 +44,9 @@ app.use(express.static('public'));
 app.use('/bower_components',  express.static(__dirname + '/bower_components'));
 app.use('/jquery',  express.static(__dirname + '/node_modules/jquery/dist'));
 app.use('/semantic',  express.static(__dirname + '/semantic/dist'));
+app.use('/dist',  express.static(__dirname + '/dist'));
+app.use('/static',  express.static(__dirname + '/static'));
+
 
 // let swig = consolidate.swig;
 
@@ -62,9 +74,12 @@ app.use(session({
 }));
 
 app.get('/', function(req, res, next) {
-
-	console.log(res.render);
 	res.render('index');
+});
+app.get('/test', function(req, res, next) {
+	res.render('test', {
+		content: ReactDOMServer.renderToString(<App name="Mario"/>)
+	});
 });
 
 app.use('/login', function(req, res,next) {
@@ -75,7 +90,7 @@ app.use('/login', function(req, res,next) {
     let email = req.body.email;
     let password = req.body.password;
 
-    var url = 'mongodb://localhost:27017/website';
+    var url = 'mongodb://localhost:27017/gaas';
     MongoClient
       .connect(url)
       .then(function(db) {
@@ -119,7 +134,7 @@ app.get(['/dashboard', '/dashboard/:appId', '/dashboard/:appId/:collectionName']
 	let tempalateData = {title: 'Dashboard' };
 	let schemaDB = null;
   MongoClient
-    .connect(baseUrl + 'website')
+    .connect(baseUrl + 'gaas')
     .then(function(db) {
 
 
@@ -251,7 +266,7 @@ export default class AppSchema {
     if(AppSchema.instance != null) {
       return Promise.resolve(AppSchema.instance);
     } else {
-      var url = 'mongodb://localhost:27017/' + appId;
+      var url = 'mongodb://localhost:27017/' + 'gaas';
       return MongoClient
         .connect(url)
         .then(function(db) {
@@ -587,9 +602,22 @@ export default class AppSchema {
     }
   }
 
+	resolveConnection(entityName) {
+		console.log(entityName);
+		return (root, args, resolveInfo) => {
+			console.log(args, entityName);
+			var a = connectionFromMongoCursor(
+				this.db.collection(entityName).find({}),
+				args
+			);
+			return a.catch(error => console.error(error.stack););
+		};
+	}
+
   generateGraphQLEndpoint() {
     let outputType;
     let inputType;
+    // let outputConnection;
 
     let queries = {};
     let mutations = {};
@@ -617,7 +645,6 @@ export default class AppSchema {
     	}
     });
 
-
     this.rootQueryFields = {
     	node: {
     		type: NodeInterface,
@@ -637,19 +664,28 @@ export default class AppSchema {
             return Promise.resolve(result);
           })
     		}
-    	}
+    	},
     };
+
+
 
     this.rootMutationFields = {};
     let types = this.getSchema();
-
+		let typeNames = {};
     for(var i in types) {
 			name = types[i].name;
+			typeNames [name] = {value: name};
 			fields = types[i].fields;
       // first for create output and input types based on the spec
 			let fieldsThunk = this.getOutputFieldsThunk(name, fields);
 			outputType = { name : name + 'Type', fields : fieldsThunk, interfaces: [NodeInterface] };
 			this.outputTypes[outputType.name] = new GraphQLObjectType(outputType);
+
+			var {connectionType: outputConnection} =
+  			connectionDefinitions({nodeType: this.outputTypes[outputType.name]});
+
+			this.outputTypes[name + 'Connection'] = outputConnection;
+
 			inputType = { name : name + 'Input', fields: this.getInputFieldsThunk(name, fields) };
 			this.inputTypes[inputType.name] = new GraphQLInputObjectType(inputType);
 
@@ -661,6 +697,14 @@ export default class AppSchema {
 					},
 				},
 				resolve: this.resolveEntity(name)
+			}
+			console.log(outputConnection.name);
+
+			// console.log(this.outputTypes[outputType.name + 'Connection']);
+			this.rootQueryFields[pluralize(name, 2)] = {
+				type: this.outputTypes[name + 'Connection'],
+				resolve: this.resolveConnection(name),
+				args: connectionArgs
 			}
 
 			this.rootMutationFields['Introduce' + pluralize(name, 1)] = {
@@ -728,8 +772,30 @@ export default class AppSchema {
     			}
         }
 			}
-
 		}
+
+		var {connectionType: nodeConnection} =
+			connectionDefinitions({nodeType: NodeInterface});
+
+		var nodeArgs = connectionArgs;
+
+		nodeArgs['entityName'] = {
+			type: new GraphQLEnumType({
+				values: typeNames
+			})
+		}
+		this.rootQueryFields['nodes'] = {
+			type: nodeConnection,
+			// resolve: (root, args) => {
+			// 	var a = Promise.resolve(this.resolveConnection(args.entityName)(root, args))
+			// 	console.log(Promise.resolve(a).then((r) => r ));
+			// 	return a;
+			// },
+
+			resolve: (root, args) => this.resolveConnection(args.entityName)(root,args),
+			args: nodeArgs
+		};
+
 		return Promise.resolve([this.rootQueryFields, this.rootMutationFields]);
   }
 
@@ -797,7 +863,13 @@ export function start(appId) {
     `, {
       Query: {
         entity(root, args) {
+					const _schema = appSchema.getSchema();
 
+					for(var i in _schema) {
+						if(_schema[i].name == args.name) {
+							return _schema[i];
+						}
+					}
         },
         field(root, args) {
         },
@@ -828,12 +900,12 @@ export function start(appId) {
     // schema('mutation {  editFieldInEntity(input: {entity:"Topic", name: "user", outputRequired: false}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
     // schema('mutation {  addFieldToEntity(input: {entity:"Topic", type: "TopicFactor", name: "pros", isArray: true}) { name, fields { name, type, inputRequired, outputRequired, isArray }} }').then(result => console.log(result));
 
-    app.use('/schema', graphqlHTTP({schema: schema.schema, graphiql: true}));
+    app.use('/graphql/schema', isAuthenticated, graphqlHTTP({schema: schema.schema, graphiql: true}));
     // app.get('/schema', function(result){
     //   console.log(result);
     // });
 
-    app.use('/graphql', graphqlHTTP({
+    app.use('/graphql/data', graphqlHTTP({
       schema: new GraphQLSchema({
         query: new GraphQLObjectType({
           name: 'RootQueryType',
@@ -853,6 +925,19 @@ export function start(appId) {
   });
 }
 
+function isAuthenticated(req, res, next) {
+
+    // do any checks you want to in here
+
+    // CHECK THE USER STORED IN SESSION FOR A CUSTOM VARIABLE
+    // you can do this however you want with whatever variables you set up
+    if (req.session.user)
+        return next();
+
+    // IF A USER ISN'T LOGGED IN, THEN REDIRECT THEM SOMEWHERE
+    res.redirect('/');
+}
+
 
 app.listen(3001);
 console.log("secondary endpoint listening on port 3001");
@@ -866,6 +951,8 @@ class Field {
   inputRequired = false;
   outputRequired = false;
 
+	unique = false;
+
   name = "";
 
   constructor(configMap) {
@@ -876,6 +963,7 @@ class Field {
     this.isArray = configMap.isArray || this.isArray;
     this.hidden = configMap.hidden || this.hidden;
     this.isEntityType = AppSchema.defaultTypes[this.type] ? false : true;
+		this.unique = configMap.unique || this.unique;
   }
 
   store() {
@@ -884,7 +972,8 @@ class Field {
         "type" : this.type,
         "inputRequired" : this.inputRequired,
         "outputRequired" : this.outputRequired,
-        "isArray" : this.isArray
+        "isArray" : this.isArray,
+				"unique": this.unique
     }
   }
 

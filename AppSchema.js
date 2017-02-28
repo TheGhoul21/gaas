@@ -610,7 +610,7 @@ export default class AppSchema {
 				this.db.collection(entityName).find({}),
 				args
 			);
-			return a.catch(error => console.error(error.stack););
+			return a.catch(error => console.error(error.stack));
 		};
 	}
 

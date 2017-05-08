@@ -251,27 +251,44 @@ class DataResolver {
 		// 	schemaQueryFields[i].deprecatedReason = '';
 		// 	delete schemaQueryFields[i].isDeprecated;
 		// };
+
 		this.rootQueryFields['_schema'] = {
-			type: this.entitySchema.schema.getQueryType(),
+			type: this.entitySchema.Query,
 			resolve: () => ({})
 		}
 		this.rootMutationFields['_schema'] = {
-			type: this.entitySchema.schema.getMutationType(),
+			type: this.entitySchema.Mutation,
 			resolve: () => { console.log(arguments); return {addEntity: {}}; }
 		}
 
+		// console.log("query", (this.entitySchema));
+		// var schemaFields = this.entitySchema.schema.getQueryType().getFields();
+		// for(var i in schemaFields) {
+		// 	delete schemaFields[i].isDeprecated;
+		// }
+		// console.log("entitySchema", new GraphQLObjectType(this.entitySchema.Query._typeConfig));
+this.entitySchema.Query.name = 'Schema';
+		console.log("AAAAAAAA", this.entitySchema.Query instanceof GraphQLObjectType);
     return Promise.resolve(graphqlHTTP({
       schema: new GraphQLSchema({
         query: new GraphQLObjectType({
           name: 'RootQueryType',
           // fields: () => this.rootQueryFields
 					fields: () => ({
-						_schema: {
-							type: this.entitySchema.schema.getQueryType(),
-							resolve: () => ({})
-						},
-						node: this.rootQueryFields['node'],
-						viewer: {
+						Schema: { type: this.entitySchema.Query, resolve: () => ({})},
+						//_schema: this.entitySchema.schema.getQueryType(),
+						// _schema: {
+						// 	type: new GraphQLObjectType({
+						// 		name: '_schema',
+						// 		fields: schemaFields,
+						// 		types: this.entitySchema.schema.getTypeMap(),
+						//
+						// 	}),
+						// 	types: this.entitySchema.schema.getTypeMap(),
+						// 	resolve: () => ({})
+						// },
+						Node: this.rootQueryFields['node'],
+						Viewer: {
 							type: new GraphQLObjectType({
 								name: 'Viewer',
 								fields: () => this.rootQueryFields
@@ -361,8 +378,9 @@ class DataResolver {
   resolveEntityByAttribute =
   (name, fieldName, spec) =>
   (root, args) => {
+		console.log({[fieldName]: spec.type == 'ID' || spec.isEntityType ? ObjectId(this.decodeId(args[fieldName]).id) : args[fieldName] });
     return connectionFromMongoCursor(this.db.collection(this.appId + ':' + name)
-        .find({[fieldName]: spec.isEntityType ? ObjectId(this.decodeId(args[fieldName]).id) : args[fieldName] }), args);
+        .find({[spec.type == 'ID' ? '_id' : fieldName]: spec.type == 'ID' || spec.isEntityType ? ObjectId(this.decodeId(args[fieldName]).id) : args[fieldName] }), args);
 
   }
   decodeId(id) {

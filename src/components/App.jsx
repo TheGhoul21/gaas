@@ -8,9 +8,9 @@ import Relay, {
 } from 'react-relay';
 
 Relay.injectNetworkLayer(
-  new DefaultNetworkLayer('http://localhost:3001')
+  new DefaultNetworkLayer('http://58162dacf3c6823a39a4c04d.gaas.localhost:3001/')
 );
-
+import PropTypes from 'prop-types';
 
 class App extends React.Component {
   constructor(props) {
@@ -65,7 +65,7 @@ class App extends React.Component {
 }
 
 App.propTypes = {
-  name: React.PropTypes.string
+  name: PropTypes.string
 };
 
 export default App;

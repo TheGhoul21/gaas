@@ -15,19 +15,33 @@ import useRouterHistory from 'react-router/lib/useRouterHistory';
 import App from './components/App.jsx';
 /* ... */
 
-const url = 'http://58162dacf3c6823a39a4c04d.gaas.dev:3001/graphql';
+const url = 'http://58162dacf3c6823a39a4c04d.gaas.localhost:3001' + '/graphql';
 
-import { initTemplateStringTransformerFromUrl } from 'relay-runtime-query'
+import { initTemplateStringTransformer } from 'relay-runtime-query'
 const history = useRouterHistory(createHashHistory)({ });
 
 import {getTypes} from './config/fragments.js';
-initTemplateStringTransformerFromUrl(url, (func, schemaJson) => {
+import fetch from 'isomorphic-fetch';
+import {introspectionQuery, printSchema} from 'graphql/utilities';
 
-  Relay.QL = func;
+function graphQLFetcher(graphQLParams) {
+  const url = 'http://58162dacf3c6823a39a4c04d.gaas.localhost:3001' + '/graphql';
+  return fetch(url, {
+    method: 'post',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json'},
+    body: JSON.stringify(graphQLParams),
+  }).then(response => response.json());
+}
+console.log(url);
+graphQLFetcher({ query: introspectionQuery }).then(result => {
+  const schemaJson = result.data;
+  Relay.QL = initTemplateStringTransformer(schemaJson);
+
   getTypes(schemaJson);
 
   var Dashboard = require('./components/Dashboard.jsx').default;
-  const url = 'http://58162dacf3c6823a39a4c04d.gaas.dev:3001/graphql';
+  const url = 'http://58162dacf3c6823a39a4c04d.gaas.localhost:3001/graphql';
   Relay.injectNetworkLayer(
     new Relay.DefaultNetworkLayer(url, {
       credentials: 'same-origin'
@@ -36,12 +50,12 @@ initTemplateStringTransformerFromUrl(url, (func, schemaJson) => {
 
 
   const NodesQuery = {
-    viewer: () => Relay.QL`query { viewer }`,
-    schema: () => Relay.QL`query { _schema }`,
+    viewer: () => Relay.QL`query { Viewer }`,
+    schema: () => Relay.QL`query { Schema }`,
   };
   const NodeQuery = {
-    node: () => Relay.QL`query { node(id:$objectId) }`,
-    schema: () => Relay.QL`query { _schema }`,
+    node: () => Relay.QL`query { Node(id:$objectId) }`,
+    schema: () => Relay.QL`query { Schema }`,
   };
 
   let AppRouter =

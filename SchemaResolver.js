@@ -19,6 +19,9 @@ import {
   GraphQLInputObjectType
 } from 'graphql/type';
 
+var Type = require('graph.ql/lib/generate');
+var parse = require('graph.ql/lib/parse')
+
 var _db;
 class SchemaResolver {
   static defaultTypes = {
@@ -50,8 +53,10 @@ class SchemaResolver {
   }
 
 	init() {
+		var self = this;
 		return this.db.collection('graphql').findOne({_id: ObjectId(this.appId)})
 		.then(function(schema) {
+			console.log(schema);
 			var typeNames = [];
 			for(var i in schema.schema) {
 				typeNames.push(schema.schema[i].name);
@@ -59,7 +64,7 @@ class SchemaResolver {
 			return Promise.resolve(typeNames);
 		})
 		.then(function(typeNames) {
-			let _schema = Schema(`
+			let _schemaString = /*Schema*/[`
 			enum FieldType { ` + typeNames.concat(Object.keys(SchemaResolver.defaultTypes)).join(', ') +`}
 			enum EntityType { ` + typeNames.join(', ') +`}
 			type Field implements SchemaNode {
@@ -159,12 +164,18 @@ class SchemaResolver {
 					}
 				},
 				SchemaNode: { resolveType() { console.log('resolveType', arguments); }},
-				Query: SchemaResolver.getInstance().getQuery(),
-				Mutation: SchemaResolver.getInstance().getMutation()
-			});
-			return _schema;
+				Query: /*SchemaResolver.getInstance().*/self.getQuery(),
+				Mutation: /*SchemaResolver.getInstance().*/self.getMutation()
+			}];
+
+			var types = Type(parse(_schemaString[0]), _schemaString[1])
+		  var object_types = types.objectTypes
+
+
+			// return _schema;
+			return object_types;
 			// graphqlHTTP({schema: _schema.schema, graphiql: true})(req, res,next);
-		}).catch(err => {console.error(err);})
+		}).catch(err => {console.error("error", this, err);})
 	}
 
   getSchema() {
